@@ -1,0 +1,11 @@
+{
+  "name": "sample-vulnerable-app",
+  "version": "1.0.0",
+  "description": "Inspectra verification test fixture",
+  "main": "src/index.js",
+  "dependencies": {
+    "jsonwebtoken": "^8.5.1",
+    "lodash": "^4.17.15"
+  }
+}
+
