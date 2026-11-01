@@ -1,9 +1,31 @@
-const Groq = require("groq-sdk");
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const path = require("path");
+require("dotenv").config({ path: path.resolve(__dirname, "../../.env") });
+require("dotenv").config();
+
+const { ChatGoogle } = require("@langchain/google");
+const { HumanMessage, SystemMessage } = require("@langchain/core/messages");
+
+function getApiKey() {
+    return process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || "";
+}
+
+function getCandidateGeminiModels() {
+    return [
+        process.env.GEMINI_MODEL,
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-pro"
+    ].filter(Boolean);
+}
 
 async function generateContent(code, language) {
-    
-    // System Prompt: Sirf role aur language check ke liye
+    const apiKey = getApiKey();
+    if (!apiKey) {
+        return "## ❌ Error\nBackend is running, but `GOOGLE_API_KEY` is not configured in `.env`. Please add your Google Gemini API key to proceed.";
+    }
+
+    // System instruction: Role and language verification
     const systemInstruction = `
 You are an expert ${language} code reviewer. 
 First, verify if the code is actually ${language}. If it is not, reply ONLY with this exact message and stop:
@@ -11,7 +33,7 @@ First, verify if the code is actually ${language}. If it is not, reply ONLY with
 You selected **${language}**, but the provided code appears to be in a different language.
     `;
 
-    // User Prompt: Code pehle denge, aur Template sabse last mein!
+    // User Prompt: Template for code quality report
     const userPrompt = `
 Here is the ${language} code to review:
 \`\`\`${language}
@@ -46,22 +68,40 @@ DO NOT skip any headings. You MUST include Security and Test Cases even if the c
 \`\`\`
     `;
 
-    try {
-        const chatCompletion = await groq.chat.completions.create({
-            messages: [
-                { role: "system", content: systemInstruction },
-                { role: "user", content: userPrompt } // Template ab last mein jaa raha hai
-            ],
-            temperature: 0.1, // Isko 0.1 kar diya hai taaki AI bilkul bhi apni marzi na chalaye
-            model: "llama-3.3-70b-versatile", 
-        });
+    let lastError = null;
+    const candidateModels = [...new Set(getCandidateGeminiModels())];
 
-        return chatCompletion.choices[0]?.message?.content || "";
+    for (const modelName of candidateModels) {
+        try {
+            const chatGoogle = new ChatGoogle({
+                apiKey,
+                model: modelName,
+                temperature: 0.1,
+            });
 
-    } catch (error) {
-        console.error("Groq API Error:", error);
-        return "## ❌ Error\nBackend is running, but failed to connect to Groq AI.";
+            const response = await chatGoogle.invoke([
+                new SystemMessage(systemInstruction),
+                new HumanMessage(userPrompt)
+            ]);
+
+            const content = response.content;
+            if (content) {
+                // Return string representation
+                return typeof content === 'string' ? content : JSON.stringify(content);
+            }
+        } catch (error) {
+            lastError = error;
+            console.warn(`Gemini model '${modelName}' attempt failed:`, error.message);
+            // If model is not found, try fallback
+            if (error?.status === 404 || error?.message?.includes("not found")) {
+                continue;
+            }
+            break;
+        }
     }
+
+    console.error("Gemini API Error:", lastError?.message || lastError);
+    return `## ❌ Error\nFailed to connect to Google Gemini API: ${lastError?.message || 'Connection failed'}\n\n*Please verify your \`GOOGLE_API_KEY\` in \`backend/.env\`.*`;
 }
 
 module.exports = generateContent;
