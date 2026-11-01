@@ -1,2 +1,10 @@
 node_modules/
+*/node_modules/
+.env
+*.env
 backend/.env
+.devpilot_storage/
+backend/.devpilot_storage/
+dist/
+Frontend/dist/
+.DS_Store
